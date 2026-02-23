@@ -2,128 +2,145 @@
 <html lang="az">
 <head>
     <meta charset="UTF-8">
-    <title>Gemini AI Robot</title>
+    <title>Double Cyber Hands</title>
     <style>
-        body { margin: 0; overflow: hidden; background: radial-gradient(circle, #001212, #000); font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; overflow: hidden; background: radial-gradient(circle, #000808, #000); }
+        #input_video { position: absolute; visibility: hidden; }
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 1000;
         }
         button {
-            padding: 20px 50px; font-size: 22px; cursor: pointer;
-            background: #00ffcc; border: none; border-radius: 50px; font-weight: bold;
-            box-shadow: 0 0 20px rgba(0,255,204,0.5); transition: 0.3s;
+            padding: 15px 40px; font-size: 18px; background: none; border: 2px solid #ff00cc;
+            color: #ff00cc; cursor: pointer; font-family: 'Courier New', monospace;
+            box-shadow: 0 0 15px rgba(255, 0, 204, 0.3); transition: 0.3s;
         }
-        button:hover { transform: scale(1.1); box-shadow: 0 0 40px #00ffcc; }
-        #status { position: absolute; top: 30px; width: 100%; text-align: center; color: #00ffcc; font-size: 24px; text-shadow: 0 0 10px #00ffcc; }
-        #chat-box {
-            position: absolute; bottom: 30px; left: 30px; color: white;
-            background: rgba(0, 255, 204, 0.1); padding: 20px; border-radius: 15px;
-            border: 1px solid #00ffcc; max-width: 400px; backdrop-filter: blur(5px);
-        }
+        button:hover { background: #ff00cc; color: #000; box-shadow: 0 0 30px #ff00cc; }
     </style>
 </head>
 <body>
 
-    <div id="overlay"><button onclick="initRobot()">ROBOTU BAŞLAT</button></div>
-    <div id="status">Sistem Hazırdır</div>
-    <div id="chat-box">Sizə necə kömək edə bilərəm?</div>
+    <div id="overlay"><button onclick="startSystem()">İki Əlli Sistemi Başlat</button></div>
+    <video id="input_video" playsinline></video>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
     <script>
-        // --- AYARLAR ---
-        const GEMINI_API_KEY = "AIzaSyDKAmKi1BA-YxcNmHrv7QvXWsC1P2zpjDw"; 
-        const statusDiv = document.getElementById('status');
-        const chatDiv = document.getElementById('chat-box');
-        let isSpeaking = false;
+        const videoElement = document.getElementById('input_video');
+        const overlay = document.getElementById('overlay');
 
-        // --- 1. THREE.JS VİZUAL ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
+        camera.position.z = 8;
 
-        const group = new THREE.Group();
-        const head = new THREE.Mesh(new THREE.BoxGeometry(2, 2.5, 2), new THREE.MeshStandardMaterial({color: 0x222222, metalness: 1, roughness: 0.2}));
-        const mouth = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 0.1), new THREE.MeshBasicMaterial({color: 0x00ffcc}));
-        mouth.position.set(0, -0.7, 1.01);
-        
-        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({color: 0x00ffcc}));
-        eyeL.position.set(-0.5, 0.5, 1);
-        const eyeR = eyeL.clone(); eyeR.position.x = 0.5;
-
-        group.add(head, mouth, eyeL, eyeR);
-        scene.add(group, new THREE.AmbientLight(0xffffff, 0.5), new THREE.DirectionalLight(0xffffff, 1).set(2,2,5));
-        camera.position.z = 5;
-
-        // --- 2. GEMINI AI BAĞLANTISI ---
-        async function askGemini(question) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        // --- ƏL YARATMA FUNKSİYASI ---
+        function createCyberHand(color) {
+            const group = new THREE.Group();
+            const joints = [];
+            const jointGeo = new THREE.SphereGeometry(0.08, 8, 8);
+            const jointMat = new THREE.MeshBasicMaterial({ color: color });
             
-            try {
-                const response = await fetch(url, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: `Sən Azərbaycan dilində danışan köməkçi bir robotsan. Qısa və mehriban cavab ver. Sual: ${question}` }] }]
-                    })
-                });
-
-                const data = await response.json();
-                return data.candidates[0].content.parts[0].text;
-            } catch (e) {
-                console.error(e);
-                return "Bağlantıda kiçik bir problem oldu, amma mən hələ də buradayam!";
+            for(let i=0; i<21; i++) {
+                const joint = new THREE.Mesh(jointGeo, jointMat);
+                group.add(joint);
+                joints.push(joint);
             }
+
+            const skeletonGeo = new THREE.BufferGeometry();
+            const skeletonMat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.8 });
+            const skeleton = new THREE.LineSegments(skeletonGeo, skeletonMat);
+
+            const webGeo = new THREE.BufferGeometry();
+            const webMat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.2 });
+            const web = new THREE.LineSegments(webGeo, webMat);
+
+            scene.add(group, skeleton, web);
+            return { group, joints, skeleton, web, visible: false };
         }
 
-        // --- 3. SƏS VƏ DİNLƏMƏ ---
-        function speak(text) {
-            window.speechSynthesis.cancel();
-            const msg = new SpeechSynthesisUtterance(text);
-            const voices = window.speechSynthesis.getVoices();
-            msg.voice = voices.find(v => v.lang.includes('az')) || voices.find(v => v.lang.includes('tr')) || voices[0];
-            msg.lang = msg.voice ? msg.voice.lang : 'az-AZ';
-            
-            msg.onstart = () => isSpeaking = true;
-            msg.onend = () => { isSpeaking = false; mouth.scale.y = 1; };
-            window.speechSynthesis.speak(msg);
-        }
+        // İki əl yaradırıq: Biri neon yaşıl, biri neon çəhrayı
+        const hand1 = createCyberHand(0x00ffcc); 
+        const hand2 = createCyberHand(0xff00cc);
+        const handsArray = [hand1, hand2];
 
-        function initRobot() {
-            document.getElementById('overlay').style.display = 'none';
-            const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!Speech) return alert("Brauzeriniz səs tanımır!");
+        const connections = [
+            [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8],
+            [5,9],[9,10],[10,11],[11,12], [9,13],[13,14],[14,15],[15,16],
+            [13,17],[17,18],[18,19],[19,20],[0,17]
+        ];
 
-            const rec = new Speech();
-            rec.lang = 'az-AZ';
-            rec.continuous = true;
+        // --- MEDIAPIPE ---
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
 
-            rec.onresult = async (event) => {
-                const text = event.results[event.results.length - 1][0].transcript;
-                chatDiv.innerText = "Siz: " + text;
-                statusDiv.innerText = "Düşünürəm...";
-                
-                const aiResponse = await askGemini(text);
-                chatDiv.innerText += "\nRobot: " + aiResponse;
-                statusDiv.innerText = "Dinləyirəm...";
-                speak(aiResponse);
-            };
+        hands.setOptions({ 
+            maxNumHands: 2, // BURADA 2 ƏL AKTİV EDİLDİ
+            modelComplexity: 1, 
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7 
+        });
 
-            rec.start();
-            speak("Sistem aktivləşdirildi. Mən Gemini, sizin ağıllı köməkçinizəm.");
+        hands.onResults((results) => {
+            // Əvvəlcə hər iki əli gizlət
+            handsArray.forEach(h => {
+                h.group.visible = h.skeleton.visible = h.web.visible = false;
+            });
+
+            if (results.multiHandLandmarks) {
+                results.multiHandLandmarks.forEach((landmarks, index) => {
+                    if (index < 2) {
+                        const hand = handsArray[index];
+                        hand.group.visible = hand.skeleton.visible = hand.web.visible = true;
+
+                        const points = landmarks.map(p => 
+                            new THREE.Vector3((p.x - 0.5) * -16, (p.y - 0.5) * -12, -p.z * 10)
+                        );
+
+                        // Oynaqlar
+                        points.forEach((p, i) => hand.joints[i].position.copy(p));
+
+                        // Karkas
+                        const skelPoints = [];
+                        connections.forEach(([a, b]) => skelPoints.push(points[a], points[b]));
+                        hand.skeleton.geometry.setFromPoints(skelPoints);
+
+                        // Bilək bağlantıları
+                        const webPoints = [];
+                        points.forEach((p, i) => { if(i !== 0) webPoints.push(points[0], p); });
+                        hand.web.geometry.setFromPoints(webPoints);
+                    }
+                });
+            }
+        });
+
+        async function startSystem() {
+            overlay.style.display = 'none';
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            videoElement.srcObject = stream;
+            const cameraHelper = new Camera(videoElement, {
+                onFrame: async () => { await hands.send({image: videoElement}); },
+                width: 1280, height: 720
+            });
+            cameraHelper.start();
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            if (isSpeaking) mouth.scale.y = 1 + Math.sin(Date.now() * 0.03) * 6;
-            group.rotation.y = Math.sin(Date.now() * 0.001) * 0.2;
-            group.position.y = Math.sin(Date.now() * 0.0015) * 0.1;
             renderer.render(scene, camera);
         }
         animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>
