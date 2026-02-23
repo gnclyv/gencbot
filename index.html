@@ -2,25 +2,41 @@
 <html lang="az">
 <head>
     <meta charset="UTF-8">
-    <title>Double Cyber Hands</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cyber Hands Mobile</title>
     <style>
-        body { margin: 0; overflow: hidden; background: radial-gradient(circle, #000808, #000); }
-        #input_video { position: absolute; visibility: hidden; }
+        body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
+        #input_video { position: absolute; visibility: hidden; width: 1px; height: 1px; }
+        
         #overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 1000;
+            background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 1000; color: #ff00cc;
+            font-family: sans-serif; text-align: center; padding: 20px;
         }
+        
         button {
-            padding: 15px 40px; font-size: 18px; background: none; border: 2px solid #ff00cc;
-            color: #ff00cc; cursor: pointer; font-family: 'Courier New', monospace;
-            box-shadow: 0 0 15px rgba(255, 0, 204, 0.3); transition: 0.3s;
+            padding: 15px 30px; font-size: 18px; background: transparent; 
+            border: 2px solid #ff00cc; color: #ff00cc; border-radius: 50px;
+            cursor: pointer; font-weight: bold; text-transform: uppercase;
         }
-        button:hover { background: #ff00cc; color: #000; box-shadow: 0 0 30px #ff00cc; }
+
+        /* Kiçik kamera önizləməsi (istəsən göstərə bilərsən) */
+        #preview {
+            position: fixed; top: 10px; right: 10px; width: 80px; height: 110px;
+            border: 1px solid #333; border-radius: 5px; z-index: 5;
+            object-fit: cover; transform: scaleX(-1); opacity: 0.6;
+        }
     </style>
 </head>
 <body>
 
-    <div id="overlay"><button onclick="startSystem()">İki Əlli Sistemi Başlat</button></div>
+    <div id="overlay">
+        <h2>CYBER HANDS AI</h2>
+        <p>Kameranı aktivləşdirin və əllərinizi göstərin</p>
+        <button onclick="startSystem()">BAŞLAT</button>
+    </div>
+    
     <video id="input_video" playsinline></video>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -31,103 +47,92 @@
         const videoElement = document.getElementById('input_video');
         const overlay = document.getElementById('overlay');
 
+        // --- 1. THREE.JS MOBİL OPTİMİZASİYA ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true }); // Antialias: false performansı artırır
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Yüksək FPS üçün 2-dən çox pixel ratio vermirik
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
-        camera.position.z = 8;
+        
+        // Mobil üçün kameranı bir az geriyə çəkirik ki, əllər tam sığsın
+        camera.position.z = 10;
 
-        // --- ƏL YARATMA FUNKSİYASI ---
-        function createCyberHand(color) {
+        function createHand(color) {
             const group = new THREE.Group();
             const joints = [];
-            const jointGeo = new THREE.SphereGeometry(0.08, 8, 8);
+            const jointGeo = new THREE.SphereGeometry(0.1, 6, 6); // Daha az poliqon
             const jointMat = new THREE.MeshBasicMaterial({ color: color });
-            
             for(let i=0; i<21; i++) {
                 const joint = new THREE.Mesh(jointGeo, jointMat);
                 group.add(joint);
                 joints.push(joint);
             }
-
             const skeletonGeo = new THREE.BufferGeometry();
             const skeletonMat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.8 });
             const skeleton = new THREE.LineSegments(skeletonGeo, skeletonMat);
-
-            const webGeo = new THREE.BufferGeometry();
-            const webMat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.2 });
-            const web = new THREE.LineSegments(webGeo, webMat);
-
-            scene.add(group, skeleton, web);
-            return { group, joints, skeleton, web, visible: false };
+            scene.add(group, skeleton);
+            return { group, joints, skeleton };
         }
 
-        // İki əl yaradırıq: Biri neon yaşıl, biri neon çəhrayı
-        const hand1 = createCyberHand(0x00ffcc); 
-        const hand2 = createCyberHand(0xff00cc);
-        const handsArray = [hand1, hand2];
-
+        const hand1 = createHand(0x00ffcc);
+        const hand2 = createHand(0xff00cc);
         const connections = [
             [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8],
             [5,9],[9,10],[10,11],[11,12], [9,13],[13,14],[14,15],[15,16],
             [13,17],[17,18],[18,19],[19,20],[0,17]
         ];
 
-        // --- MEDIAPIPE ---
+        // --- 2. MEDIAPIPE MOBİL AYARLAR ---
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
         hands.setOptions({ 
-            maxNumHands: 2, // BURADA 2 ƏL AKTİV EDİLDİ
-            modelComplexity: 1, 
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7 
+            maxNumHands: 2,
+            modelComplexity: 0, // 0 səviyyəsi mobil telefonlarda daha sürətli işləyir
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5 
         });
 
         hands.onResults((results) => {
-            // Əvvəlcə hər iki əli gizlət
-            handsArray.forEach(h => {
-                h.group.visible = h.skeleton.visible = h.web.visible = false;
-            });
+            [hand1, hand2].forEach(h => { h.group.visible = h.skeleton.visible = false; });
 
             if (results.multiHandLandmarks) {
                 results.multiHandLandmarks.forEach((landmarks, index) => {
-                    if (index < 2) {
-                        const hand = handsArray[index];
-                        hand.group.visible = hand.skeleton.visible = hand.web.visible = true;
+                    const h = index === 0 ? hand1 : hand2;
+                    h.group.visible = h.skeleton.visible = true;
 
-                        const points = landmarks.map(p => 
-                            new THREE.Vector3((p.x - 0.5) * -16, (p.y - 0.5) * -12, -p.z * 10)
-                        );
+                    // Mobil ekran nisbətinə görə koordinat tənzimləməsi
+                    const points = landmarks.map(p => 
+                        new THREE.Vector3((p.x - 0.5) * -18, (p.y - 0.5) * -22, -p.z * 10)
+                    );
 
-                        // Oynaqlar
-                        points.forEach((p, i) => hand.joints[i].position.copy(p));
-
-                        // Karkas
-                        const skelPoints = [];
-                        connections.forEach(([a, b]) => skelPoints.push(points[a], points[b]));
-                        hand.skeleton.geometry.setFromPoints(skelPoints);
-
-                        // Bilək bağlantıları
-                        const webPoints = [];
-                        points.forEach((p, i) => { if(i !== 0) webPoints.push(points[0], p); });
-                        hand.web.geometry.setFromPoints(webPoints);
-                    }
+                    points.forEach((p, i) => h.joints[i].position.copy(p));
+                    const skelPoints = [];
+                    connections.forEach(([a, b]) => skelPoints.push(points[a], points[b]));
+                    h.skeleton.geometry.setFromPoints(skelPoints);
                 });
             }
         });
 
+        // --- 3. KAMERA QURULUMU (ÖN KAMERA) ---
         async function startSystem() {
             overlay.style.display = 'none';
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            videoElement.srcObject = stream;
-            const cameraHelper = new Camera(videoElement, {
-                onFrame: async () => { await hands.send({image: videoElement}); },
-                width: 1280, height: 720
-            });
-            cameraHelper.start();
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } 
+                });
+                videoElement.srcObject = stream;
+                
+                const cameraHelper = new Camera(videoElement, {
+                    onFrame: async () => { await hands.send({image: videoElement}); },
+                    width: 640, height: 480
+                });
+                cameraHelper.start();
+            } catch (e) {
+                alert("Kameraya icazə verilmədi!");
+            }
         }
 
         function animate() {
