@@ -1,151 +1,221 @@
+
 <!DOCTYPE html>
 <html lang="az">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Cyber Hands Mobile</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sürətli İzləmə və Komutlu 3D Dünya</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
-        #input_video { position: absolute; visibility: hidden; width: 1px; height: 1px; }
-        
-        #overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 1000; color: #ff00cc;
-            font-family: sans-serif; text-align: center; padding: 20px;
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            cursor: none;
         }
-        
-        button {
-            padding: 15px 30px; font-size: 18px; background: transparent; 
-            border: 2px solid #ff00cc; color: #ff00cc; border-radius: 50px;
-            cursor: pointer; font-weight: bold; text-transform: uppercase;
+        #video-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
         }
-
-        /* Kiçik kamera önizləməsi (istəsən göstərə bilərsən) */
-        #preview {
-            position: fixed; top: 10px; right: 10px; width: 80px; height: 110px;
-            border: 1px solid #333; border-radius: 5px; z-index: 5;
-            object-fit: cover; transform: scaleX(-1); opacity: 0.6;
+        video {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        canvas#three-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
 
-    <div id="overlay">
-        <h2>lazer əl </h2>
-        <p>Kameranı aktivləşdirin və əllərinizi göstərin</p>
-        <button onclick="startSystem()">BAŞLAT</button>
-    </div>
+<div id="video-container">
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="three-canvas"></canvas>
+</div>
+
+<script>
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('three-canvas');
     
-    <video id="input_video" playsinline></video>
+    let scene, camera, renderer, globe;
+    let rotationVelocity = 0.002; 
+    let lastZ = null; 
+    const friction = 0.99; 
+    
+    let targetPos = { x: 0, y: 0 };
+    let targetScale = 1.0; 
+    const easing = 0.3; 
 
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-
-    <script>
-        const videoElement = document.getElementById('input_video');
-        const overlay = document.getElementById('overlay');
-
-        // --- 1. THREE.JS MOBİL OPTİMİZASİYA ---
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true }); // Antialias: false performansı artırır
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Yüksək FPS üçün 2-dən çox pixel ratio vermirik
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+    function initThree() {
+        scene = new THREE.Scene();
+        // Perspektivi bir az dəyişərək dünyanı daha yaxın hiss etdiririk
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         
-        // Mobil üçün kameranı bir az geriyə çəkirik ki, əllər tam sığsın
-        camera.position.z = 10;
+        renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
 
-        function createHand(color) {
-            const group = new THREE.Group();
-            const joints = [];
-            const jointGeo = new THREE.SphereGeometry(0.1, 6, 6); // Daha az poliqon
-            const jointMat = new THREE.MeshBasicMaterial({ color: color });
-            for(let i=0; i<21; i++) {
-                const joint = new THREE.Mesh(jointGeo, jointMat);
-                group.add(joint);
-                joints.push(joint);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(5, 3, 5);
+        scene.add(directionalLight);
+
+        const loader = new THREE.TextureLoader();
+        const geometry = new THREE.SphereGeometry(1.5, 64, 64);
+        
+        const material = new THREE.MeshPhongMaterial({
+            color: 0xffffff,
+            shininess: 20,
+            map: loader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_atmos_2048.jpg')
+        });
+        
+        globe = new THREE.Mesh(geometry, material);
+        scene.add(globe);
+
+        const cloudGeo = new THREE.SphereGeometry(1.515, 64, 64);
+        const cloudMat = new THREE.MeshPhongMaterial({
+            map: loader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_clouds_1024.png'),
+            transparent: true,
+            opacity: 0.4
+        });
+        const clouds = new THREE.Mesh(cloudGeo, cloudMat);
+        globe.add(clouds);
+
+        // Kameranı dünyadan bir az daha yaxın yerləşdiririk (əvvəl 5 idi, indi 4)
+        camera.position.z = 4;
+    }
+
+    const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.75,
+        minTrackingConfidence: 0.75
+    });
+
+    hands.onResults(onResults);
+
+    function getDistance(p1, p2) {
+        return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    }
+
+    function isFingerFolded(landmarks, fingerTipIdx, fingerPipIdx) {
+        return landmarks[fingerTipIdx].y > landmarks[fingerPipIdx].y;
+    }
+
+    function isHandFist(landmarks) {
+        return isFingerFolded(landmarks, 8, 6) && 
+               isFingerFolded(landmarks, 12, 10) && 
+               isFingerFolded(landmarks, 16, 14) && 
+               isFingerFolded(landmarks, 20, 18);
+    }
+
+    function onResults(results) {
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            let rightHand = null; 
+            let leftHand = null;  
+
+            results.multiHandLandmarks.forEach((landmark, index) => {
+                const label = results.multiHandedness[index].label;
+                if (label === 'Left') rightHand = landmark; 
+                if (label === 'Right') leftHand = landmark;
+            });
+
+            // 1. Sağ Əl - İzləmə (Koordinatları barmaq uclarına daha yaxın etdik)
+            if (rightHand) {
+                const fingerTip = rightHand[8]; 
+                // Multiplier (vuran) dəyərlərini tənzimləyərək dünyanı barmaq ucuna daha sıx bağlayırıq
+                targetPos.x = ((1 - fingerTip.x) - 0.5) * 8; 
+                targetPos.y = -(fingerTip.y - 0.5) * 5 + 1.5; 
+
+                if (isHandFist(rightHand)) {
+                    rotationVelocity = 0;
+                }
             }
-            const skeletonGeo = new THREE.BufferGeometry();
-            const skeletonMat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.8 });
-            const skeleton = new THREE.LineSegments(skeletonGeo, skeletonMat);
-            scene.add(group, skeleton);
-            return { group, joints, skeleton };
+
+            // 2. Sol Əl - İrəli itələdikdə SOLA fırlanma və ZOOM
+            if (leftHand) {
+                const currentZ = leftHand[8].z; 
+                if (lastZ !== null) {
+                    const zDelta = currentZ - lastZ;
+                    if (zDelta < -0.002) { 
+                        rotationVelocity -= Math.abs(zDelta) * 5.0; 
+                    }
+                }
+                lastZ = currentZ;
+
+                const isMiddleFolded = isFingerFolded(leftHand, 12, 9);
+                const isRingFolded = isFingerFolded(leftHand, 16, 13);
+                const isPinkyFolded = isFingerFolded(leftHand, 20, 17);
+
+                if (isMiddleFolded && isRingFolded && isPinkyFolded) {
+                    const thumbTip = leftHand[4];
+                    const indexTip = leftHand[8];
+                    const distance = getDistance(thumbTip, indexTip);
+                    
+                    let newScale = distance * 8.0; 
+                    targetScale = Math.min(Math.max(newScale, 0.4), 2.8);
+                }
+            } else {
+                lastZ = null;
+            }
+        }
+    }
+
+    const cameraInput = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({ image: videoElement });
+        },
+        width: 1280,
+        height: 720
+    });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        
+        globe.position.x += (targetPos.x - globe.position.x) * easing;
+        globe.position.y += (targetPos.y - globe.position.y) * easing;
+
+        globe.scale.x += (targetScale - globe.scale.x) * 0.1;
+        globe.scale.y += (targetScale - globe.scale.y) * 0.1;
+        globe.scale.z += (targetScale - globe.scale.z) * 0.1;
+
+        globe.rotation.y += rotationVelocity;
+        
+        if (Math.abs(rotationVelocity) > 0.0001) {
+            rotationVelocity *= friction;
         }
 
-        const hand1 = createHand(0x00ffcc);
-        const hand2 = createHand(0xff00cc);
-        const connections = [
-            [0,1],[1,2],[2,3],[3,4], [0,5],[5,6],[6,7],[7,8],
-            [5,9],[9,10],[10,11],[11,12], [9,13],[13,14],[14,15],[15,16],
-            [13,17],[17,18],[18,19],[19,20],[0,17]
-        ];
+        renderer.render(scene, camera);
+    }
 
-        // --- 2. MEDIAPIPE MOBİL AYARLAR ---
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-
-        hands.setOptions({ 
-            maxNumHands: 2,
-            modelComplexity: 0, // 0 səviyyəsi mobil telefonlarda daha sürətli işləyir
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5 
-        });
-
-        hands.onResults((results) => {
-            [hand1, hand2].forEach(h => { h.group.visible = h.skeleton.visible = false; });
-
-            if (results.multiHandLandmarks) {
-                results.multiHandLandmarks.forEach((landmarks, index) => {
-                    const h = index === 0 ? hand1 : hand2;
-                    h.group.visible = h.skeleton.visible = true;
-
-                    // Mobil ekran nisbətinə görə koordinat tənzimləməsi
-                    const points = landmarks.map(p => 
-                        new THREE.Vector3((p.x - 0.5) * -18, (p.y - 0.5) * -22, -p.z * 10)
-                    );
-
-                    points.forEach((p, i) => h.joints[i].position.copy(p));
-                    const skelPoints = [];
-                    connections.forEach(([a, b]) => skelPoints.push(points[a], points[b]));
-                    h.skeleton.geometry.setFromPoints(skelPoints);
-                });
-            }
-        });
-
-        // --- 3. KAMERA QURULUMU (ÖN KAMERA) ---
-        async function startSystem() {
-            overlay.style.display = 'none';
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } 
-                });
-                videoElement.srcObject = stream;
-                
-                const cameraHelper = new Camera(videoElement, {
-                    onFrame: async () => { await hands.send({image: videoElement}); },
-                    width: 640, height: 480
-                });
-                cameraHelper.start();
-            } catch (e) {
-                alert("Kameraya icazə verilmədi!");
-            }
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            renderer.render(scene, camera);
-        }
+    window.onload = () => {
+        initThree();
+        cameraInput.start();
         animate();
+    };
 
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-    </script>
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+</script>
 </body>
 </html>
